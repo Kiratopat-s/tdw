@@ -1,101 +1,227 @@
-import Image from "next/image";
+"use client";
+import { Button } from "@/components/ui/button";
+import { useEffect, useState } from "react";
+import { toast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
+import Time from "@/components/digit-time";
+import Calendar from "@/components/calendar";
+import { useSession, signIn, signOut } from "next-auth/react";
+import { Skeleton } from "@/components/ui/skeleton";
+import LandscapeComponent from "@/components/landscape";
+import RandomQuote from "@/components/random-quote";
+import { FilePenLine } from "lucide-react";
+import { getSheetData } from "@/actions/google-sheets.action";
+import { signData } from "@/type/glsheet";
+import { Spinner } from "@/components/ui/spinner";
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="https://nextjs.org/icons/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const [browserSupport, setBrowserSupport] = useState<boolean>(false);
+  const [userDenied, setUserDenied] = useState<boolean>(true);
+  const { data: session, status } = useSession();
+  const [systemStatusContext, setSystemStatusContext] = useState<"in" | "out">(
+    new Date().getHours() < 12 ? "in" : "out"
+  );
+  const [submitting, setSubmitting] = useState<boolean>(false);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="https://nextjs.org/icons/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  useEffect(() => {
+    if ("geolocation" in navigator) {
+      setBrowserSupport(true);
+      navigator.permissions.query({ name: "geolocation" }).then((result) => {
+        if (result.state === "granted") {
+          setUserDenied(false);
+        } else if (result.state === "prompt") {
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              if (position) {
+                setUserDenied(false);
+              }
+            },
+            (error) => {
+              toast({
+                variant: "destructive",
+                title: "Can't get your location",
+                description: "Please allow location access to use this app",
+                action: (
+                  <ToastAction
+                    onClick={() => {
+                      navigator.geolocation.getCurrentPosition(
+                        () => {},
+                        () => {}
+                      );
+                    }}
+                    altText="Understand"
+                  >
+                    understand
+                  </ToastAction>
+                ),
+                duration: 10000,
+              });
+              console.error("Error getting user location:", error);
+            }
+          );
+        } else if (result.state === "denied") {
+          toast({
+            variant: "destructive",
+            title: "Location access denied",
+            description: "Please allow location access to use this app",
+            action: (
+              <ToastAction
+                onClick={() => {
+                  navigator.geolocation.getCurrentPosition(
+                    () => {},
+                    () => {}
+                  );
+                }}
+                altText="Understand"
+              >
+                understand
+              </ToastAction>
+            ),
+            duration: 10000,
+          });
+        }
+      });
+    } else {
+      console.log("geolocation is not available");
+    }
+    return () => {};
+  }, []);
+
+  const handleOnGetSheetDataClick = async () => {
+    setSubmitting(true);
+    const options = {
+      enableHighAccuracy: true,
+      timeout: 5000,
+      maximumAge: 0,
+    };
+
+    async function success(pos: GeolocationPosition) {
+      const crd: GeolocationCoordinates = pos.coords;
+      if (session?.user?.email) {
+        const timestamp: string = new Date().toLocaleString("TH-th");
+        const req: signData = {
+          timestamp: timestamp,
+          email: session.user.email,
+          status: systemStatusContext,
+          accuracy: crd.accuracy,
+          latitude: crd.latitude,
+          longitude: crd.longitude,
+          altitude: crd.altitude,
+          heading: crd.heading,
+          speed: crd.speed,
+          linkmap: `https://www.google.com/maps/place/${crd?.latitude},${crd?.longitude}`,
+        };
+        const response = await getSheetData(req);
+        toast({
+          title: `Check ${systemStatusContext} success`,
+          description: `Successfully check ${systemStatusContext} at ${timestamp}`,
+          action: <ToastAction altText="OK">OK!</ToastAction>,
+        });
+      }
+      setSubmitting(false);
+    }
+
+    function error(err: GeolocationPositionError) {
+      console.warn(`ERROR(${err.code}): ${err.message}`);
+      setSubmitting(false);
+    }
+
+    try {
+      navigator.geolocation.getCurrentPosition(success, error, options);
+    } catch (error) {
+      console.error(error);
+      setSubmitting(false);
+    }
+  };
+
+  if (status === `loading`) {
+    return (
+      <main className=" flex flex-col justify-center h-screen w-screen">
+        <div className="flex flex-row flex-wrap self-center justify-center gap-4 max-w-xs"></div>
+        <div className="flex flex-col space-y-3 self-center">
+          <Skeleton className="h-16 w-[250px]" />
+          <Skeleton className="h-[280px] w-[250px] rounded-xl" />
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-[250px]" />
+            <Skeleton className="h-4 w-[200px]" />
+          </div>
         </div>
       </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+    );
+  }
+
+  if (!session?.user) {
+    return (
+      <main className=" flex flex-col justify-center h-screen w-screen">
+        <div className="flex flex-row flex-wrap self-center justify-center gap-4 max-w-xs">
+          <LandscapeComponent />
+          <RandomQuote />
+        </div>
+      </main>
+    );
+  }
+
+  if (userDenied) {
+    return (
+      <main className=" flex flex-col justify-center h-screen w-screen">
+        <div className="flex flex-row flex-wrap self-center justify-center gap-4 max-w-xs">
+          You must allow location access to use this app
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <main className=" flex flex-col justify-center h-screen w-screen">
+      <div className="flex flex-row flex-wrap self-center justify-center gap-4 max-w-xs">
+        <div className="flex flex-col">
+          <div className="flex flex-col gap-4">
+            <div className="overflow-hidden">
+              <div
+                className={`transition-all duration-500 ease-in-out ${
+                  submitting ? " translate-y-20" : "translate-y-0"
+                }`}
+              >
+                <Time />
+              </div>
+            </div>
+            <div className="w-full flex justify-center">
+              <Button
+                disabled={submitting}
+                className={`gap-2 transition-all duration-700 ease-in-out ${
+                  submitting
+                    ? "animate-bounce bg-slate-800 text-white w-36"
+                    : "w-full animate-none bg-white text-black"
+                }`}
+                onClick={handleOnGetSheetDataClick}
+              >
+                {submitting ? (
+                  <div className="flex gap-2">
+                    <Spinner className="text-black" size={"small"} show />
+                    <div className="flex flex-col h-full justify-center">
+                      <p>Checking {systemStatusContext} ...</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <FilePenLine className="mr-2" size={16} />
+                    <span>Check {systemStatusContext}</span>
+                  </div>
+                )}
+              </Button>
+            </div>
+            <div className=" overflow-hidden">
+              <div
+                className={`transition-all duration-700 ease-in-out ${
+                  submitting ? " translate-y-[-20rem]" : "translate-y-0"
+                }`}
+              >
+                <Calendar />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
   );
 }
