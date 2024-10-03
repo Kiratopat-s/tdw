@@ -1,11 +1,10 @@
 'use server';
 import { google } from "googleapis";
-import credentails from "@/actions/thtd-work-daily-554d0d834e9b.json"
 import { signData } from "@/type/glsheet";
 
 export async function getSheetData(param: signData) {
     const glAuth = await google.auth.getClient({
-        projectId: credentails.project_id,
+        projectId: process.env.NEXT_PUBLIC_GOOGLE_PROJECT_ID,
         credentials: {
             "type": "service_account",
             "project_id": "thtd-work-daily",
